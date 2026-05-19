@@ -26,7 +26,7 @@ def create_pack(msg_type, sender, **kwargs):
         case "login_success":
             pack["content"] = kwargs.get("message")
         case "chat_msg":
-            pack.update({"target": kwargs.get("target"), "content": kwargs.get("message")})
+            pack.update({"target": kwargs.get("target"), "content": kwargs.get("content")})
         case "error":
             pack["content"] = kwargs.get("error_msg")
         case _:

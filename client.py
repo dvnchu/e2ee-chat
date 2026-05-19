@@ -1,17 +1,16 @@
 import socket
 import threading
-import json
-import server
 from utils import parse_json, create_pack
 
-HOST = '127.0.0.1'
+HOST = '127.67.67.1'
 PORT = 50007
 USER = input("Register with username:")
 
 
 def sendmsg(serverSck):
     while True:
-        data = input().split(':')
+        msg_input = input("\nTARGET:MESSAGE: ")
+        data = msg_input.split(':')
         message = create_pack("chat_msg", USER, target=data[0], content=data[1])
         if data == "exit": break
         serverSck.sendall(message)
@@ -33,6 +32,7 @@ def receivemsg(serverSck):
 
             sender = pack["sender"]
             content = pack["content"]
+
             print(f"\n{sender}: {content}")
     except Exception as e:
         print(f"\nError inesperado en recepcion: {e}")
@@ -43,7 +43,13 @@ def receivemsg(serverSck):
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sck:
     sck.connect((HOST,PORT))
-    sck.sendall(USER.encode('utf-8'))
+    sync_pack = create_pack("login", USER)
+    sck.sendall(sync_pack)
+    print("Esperando confirmación del servidor...")
+    raw_ack = sck.recv(1024)
+    ack_pack = parse_json(raw_ack)
+    if ack_pack and ack_pack.get("type") == "login_success":
+        print(ack_pack.get('content'))
     threading.Thread(target = receivemsg, args=(sck,)).start()
     sendmsg(sck)
 

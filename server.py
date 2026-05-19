@@ -11,7 +11,7 @@ users_lock = threading.Lock()
 def handler(clientSck):
     user = None
     try:
-        user_sync = clientSck.recv(1024).decode('utf-8')
+        user_sync = clientSck.recv(1024)
         pack_sync = parse_json(user_sync)
 
         if not pack_sync:
@@ -35,12 +35,12 @@ def handler(clientSck):
             ok_pack = create_pack("login_success", "SERVER", message="Welcome to the chat")
             clientSck.sendall(ok_pack)
         while True:
-                raw_data= clientSck.recv(1024).decode()
+                raw_data= clientSck.recv(1024)
                 if not raw_data:
                     print("El usuario envio un paquete vacio")
                     clientSck.close()
                     return
-                route_msg(raw_data)
+                route_msg(raw_data, user)
     except Exception as e:
         print(f"Error en el handler: {e}")
     finally:
@@ -52,15 +52,28 @@ def handler(clientSck):
         clientSck.close()
 
 
-def route_msg(message):
+def route_msg(message, sender):
     message_pack = parse_json(message)
 
     if not message_pack:
         print("Ignorando paquete malformado.")
         return
 
-    targer = message_pack["target"]
+    target = message_pack["target"]
     content = message_pack["content"]
+
+    with users_lock:
+        target_sck = users.pop(target, None)
+
+    if target_sck:
+        pack = create_pack("chat_msg", sender, target=target, content=content)
+        target_sck.sendall(pack)
+    
+
+
+
+        
+
 
 
 
