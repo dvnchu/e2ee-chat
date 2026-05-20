@@ -1,11 +1,13 @@
 import socket
 import threading
 from utils import parse_json, create_pack
+from session import ChatSession
 
 HOST = '127.67.67.1'
 PORT = 50007
 USER = input("Register with username:")
 
+chats = {}
 
 def sendmsg(serverSck):
     while True:
@@ -50,6 +52,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sck:
     ack_pack = parse_json(raw_ack)
     if ack_pack and ack_pack.get("type") == "login_success":
         print(ack_pack.get('content'))
+
+    input("\n>")
     threading.Thread(target = receivemsg, args=(sck,)).start()
     sendmsg(sck)
 
