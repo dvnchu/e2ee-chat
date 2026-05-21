@@ -2,11 +2,12 @@ import socket
 import threading
 from utils import parse_json, create_pack
 
-HOST = ''
+HOST = ""
 PORT = 50007
 
 users = {}
 users_lock = threading.Lock()
+
 
 def handler(clientSck):
     user = None
@@ -24,7 +25,9 @@ def handler(clientSck):
         with users_lock:
             if pack_sync["sender"] in users:
                 print(f"Rechazando conexion: {user} ya esta conectado")
-                error_pack = create_pack("error", "SERVER", message="User already connected")
+                error_pack = create_pack(
+                    "error", "SERVER", message="User already connected"
+                )
                 clientSck.sendall(error_pack)
                 clientSck.close()
                 return
@@ -32,15 +35,17 @@ def handler(clientSck):
             users[user] = clientSck
             print(f"Usuario {user} conectado.")
 
-            ok_pack = create_pack("login_success", "SERVER", message="Welcome to the chat")
+            ok_pack = create_pack(
+                "login_success", "server", message="Welcome to the chat"
+            )
             clientSck.sendall(ok_pack)
         while True:
-                raw_data= clientSck.recv(1024)
-                if not raw_data:
-                    print("El usuario envio un paquete vacio")
-                    clientSck.close()
-                    return
-                route_msg(raw_data, user)
+            raw_data = clientSck.recv(1024)
+            if not raw_data:
+                print("El usuario envio un paquete vacio")
+                clientSck.close()
+                return
+            route_msg(raw_data, user)
     except Exception as e:
         print(f"Error en el handler: {e}")
     finally:
@@ -68,26 +73,11 @@ def route_msg(message, sender):
     if target_sck:
         pack = create_pack("chat_msg", sender, target=target, content=content)
         target_sck.sendall(pack)
-    
 
 
-
-        
-
-
-
-
-
-
-
-
-
-
-with socket.socket(family = socket.AF_INET, type=socket.SOCK_STREAM) as listeningSck:
+with socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM) as listeningSck:
     listeningSck.bind((HOST, PORT))
     listeningSck.listen()
     while True:
         clientSck, clientAdd = listeningSck.accept()
         threading.Thread(target=handler, args=(clientSck,), daemon=True).start()
-
-
