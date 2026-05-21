@@ -1,7 +1,9 @@
-from motor import ChatClientCore
 import os
 
-motor = ChatClientCore("anna")
+from client_core import ChatClientCore
+
+motor = ChatClientCore("anna", print, "127.0.0.1", "5050")
+motor.connect()
 
 while True:
     comando = input("\n >")

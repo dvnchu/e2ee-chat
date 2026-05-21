@@ -1,7 +1,11 @@
-import threading
 import socket
-from utils import create_pack, parse_json
+import threading
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
 from session import ChatSession
+from utils import create_pack, parse_json
 
 
 class ChatClientCore:
@@ -13,6 +17,17 @@ class ChatClientCore:
         self.sv_port = port
         self.sv_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
         self.lock = threading.Lock()
+        self._RSA_private_key = None
+
+    @property
+    def private_key(self):
+        if self._private_key is None:
+            self.on_message("[SYSTEM]: Generating cryptographic keys. Please wait")
+            self._private_key = rsa.generate_private_key(
+                public_exponent=65537, key_size=2048
+            )
+            self.on_message("[SYSTEM]: Successful key generation")
+        return self._private_key
 
     def connect(self):
         self.sv_socket.connect((self.sv_ip, self.sv_port))
@@ -43,8 +58,17 @@ class ChatClientCore:
             self.sv_socket.close()
 
     def _send_message(self, target, text):
-        pack = create_pack("chat_msg", self.username, target=target, content=text)
-        self.sv_socket.sendall(pack)
+        try:
+            with self.lock:
+                if target not in self.chats:
+                    new_chat = ChatSession(target)
+                    self.chats[target] = new_chat
+                    self._init_handshake(new_chat)
+            pack = create_pack("chat_msg", self.username, target=target, content=text)
+            self.sv_socket.sendall(pack)
+        except Exception as e:
+            if self.on_message:
+                self.on_message(f"[network error]:{e}")
 
     def _route_msg(self, pack):
         if not pack:
@@ -62,9 +86,6 @@ class ChatClientCore:
                     return
 
             with self.lock:  # Lock para que no consulten varios threads a la vez
-                if sender not in self.chats:
-                    self.chats[sender] = ChatSession(sender)
-
                 sender_chat = self.chats[sender]
                 sender_chat.add_message(sender, text)
 
@@ -74,3 +95,27 @@ class ChatClientCore:
         except Exception as e:
             if self.on_message:
                 self.on_message(f"[error al guardar el mensaje]: {e}")
+
+    def _init_handshake(self, session):
+        try:
+            key = session.get_public_key()
+            signature = self.private_key.sign(
+                key,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH,
+                ),
+                hashes.SHA256(),
+            )
+            pack = create_pack(
+                "handshake",
+                self.username,
+                target=session.target,
+                public_key=key,
+                signature=signature,
+            )
+            self.sv_socket.sendall(pack)
+            session.create_shared_secret()
+        except Exception as e:
+            if self.on_message:
+                self.on_message(f"[error al realizar el handshake]: {e}")

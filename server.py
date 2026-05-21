@@ -1,6 +1,7 @@
 import socket
 import threading
-from utils import parse_json, create_pack
+
+from utils import create_pack, parse_json
 
 HOST = ""
 PORT = 50007

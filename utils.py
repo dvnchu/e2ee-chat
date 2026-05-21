@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 
+
 def parse_json(data):
     try:
         data_string = data.decode("utf-8")
@@ -18,7 +19,7 @@ def create_pack(msg_type, sender, **kwargs):
     pack = {
         "type": msg_type,
         "sender": sender,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     match msg_type:
         case "login":
@@ -26,13 +27,20 @@ def create_pack(msg_type, sender, **kwargs):
         case "login_success":
             pack["content"] = kwargs.get("message")
         case "chat_msg":
-            pack.update({"target": kwargs.get("target"), "content": kwargs.get("content")})
+            pack.update(
+                {"target": kwargs.get("target"), "content": kwargs.get("content")}
+            )
         case "error":
             pack["content"] = kwargs.get("error_msg")
+        case "handshake":
+            pack.update(
+                {
+                    "target": kwargs.get("target"),
+                    "public_key": kwargs.get("public_key"),
+                    "signature": kwargs.get("signature"),
+                }
+            )
         case _:
             return b""
 
-    return json.dumps(pack).encode('utf-8')
-
-
-
+    return json.dumps(pack).encode("utf-8")
