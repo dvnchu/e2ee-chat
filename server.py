@@ -69,7 +69,7 @@ def route_msg(message, sender):
     content = message_pack["content"]
 
     with users_lock:
-        target_sck = users.pop(target, None)
+        target_sck = users.get(target, None)
 
     if target_sck:
         pack = create_pack("chat_msg", sender, target=target, content=content)

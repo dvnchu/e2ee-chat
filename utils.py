@@ -36,7 +36,8 @@ def create_pack(msg_type, sender, **kwargs):
             pack.update(
                 {
                     "target": kwargs.get("target"),
-                    "public_key": kwargs.get("public_key"),
+                    "public_dh_key": kwargs.get("public_dh_key"),
+                    "public_rsa_key": kwargs.get("public_rsa_key"),
                     "signature": kwargs.get("signature"),
                 }
             )

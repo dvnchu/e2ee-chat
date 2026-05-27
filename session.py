@@ -10,9 +10,11 @@ class ChatSession:
         self.shared_secret = None
         self.history = []
         self.is_secure = False
+        self.state = "PENDING"
+        self.queue = []
 
     def get_public_key(self):
-        return self._dh_private_key.public_key()
+        return self._dh_private_key.public_key().public_bytes_raw()
 
     def create_shared_secret(self, peer_public_key):
         self.shared_secret = self._dh_private_key.exchange(peer_public_key)

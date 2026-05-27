@@ -1,8 +1,12 @@
+import base64
 import socket
 import threading
 
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import dh, padding, rsa
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
 
 from session import ChatSession
 from utils import create_pack, parse_json
@@ -39,7 +43,7 @@ class ChatClientCore:
             self.on_message(ack.get("content"))
 
         threading.Thread(
-            target=self._get_message, args=(self.sv_socket,), daemon=True
+            target=self._get_message, daemon=True
         ).start()
 
     def _get_message(self):
@@ -51,7 +55,9 @@ class ChatClientCore:
                 pack = parse_json(data)
                 if pack is None:
                     break
-                self._route_msg(pack)
+                type = pack.get("type")
+                if type != "login" & type != "login_success":
+                    self._route_msg(pack)
         except Exception as e:
             self.on_message(f"[error de red]: {e}")
         finally:
@@ -75,32 +81,68 @@ class ChatClientCore:
             return
         try:
             sender = pack.get("sender")
-            text = pack.get("content")
+            type = pack.get("type")
 
-            if not sender:
+            if type == "error":
+                failed_target = pack.get("target")
+                text = pack.get("content")
+                with self.lock:
+                    if failed_target in self.chats:
+                        del self.chats[failed_target]
+                if self.on_message:
+                    self.on_message(f"[ERROR DEL SERVIDOR]: {text}")
                 return
 
-            if sender == "server":
-                if self.on_message:
-                    self.on_message(f"[SERVER]: {text}")
+            if type == "handshake":
+                rsa_signature = base64.b64decode(pack.get("signature"))
+                rsa_key_bytes = base64.b64decode(pack.get("public_rsa_key"))
+                dh_key_bytes = base64.b64decode(pack.get("public_dh_key"))
+
+                rsa_key = serialization.load_pem_public_key(rsa_key_bytes)
+
+                try:                    
+                    rsa_key.verify(
+                        rsa_signature,
+                        dh_key_bytes,
+                        padding.PSS(
+                            mgf=padding.MGF1(hashes.SHA256()),
+                            salt_length=padding.PSS.MAX_LENGTH,
+                        ),
+                        hashes.SHA256(),
+                    )
+                except InvalidSignature:
+                    self.on_message(f"[SECURITY]: Handshake rejected, invalid signature from {sender}")
+                    del self.chats[sender]
                     return
+                
+                with self.lock:
+                    sender = pack.get("sender") 
+                    if sender not in self.chats:
+                        chat = ChatSession(sender)
+                        self.chats[sender] = chat
+                        self._init_handshake(chat)               
+                    
+                dh_key = X25519PublicKey.from_public_bytes(dh_key_bytes)
+                chat.create_shared_secret(dh_key)
+                return
 
-            with self.lock:  # Lock para que no consulten varios threads a la vez
-                sender_chat = self.chats[sender]
-                sender_chat.add_message(sender, text)
-
-            if self.on_message:
-                self.on_message(pack)
-
+            if type == "chat_msg":
+                with self.lock:  # Lock para que no consulten varios threads a la vez
+                    sender_chat = self.chats[sender]
+                    sender_chat.add_message(sender, text)
+        
+                if self.on_message:
+                    self.on_message(pack)
+    
         except Exception as e:
             if self.on_message:
                 self.on_message(f"[error al guardar el mensaje]: {e}")
 
     def _init_handshake(self, session):
         try:
-            key = session.get_public_key()
+            dh_key = session.get_public_key()
             signature = self.private_key.sign(
-                key,
+                dh_key,
                 padding.PSS(
                     mgf=padding.MGF1(hashes.SHA256()),
                     salt_length=padding.PSS.MAX_LENGTH,
@@ -110,12 +152,22 @@ class ChatClientCore:
             pack = create_pack(
                 "handshake",
                 self.username,
-                target=session.target,
-                public_key=key,
-                signature=signature,
+                target=session.target_user,
+                public_dh_key=base64.b64encode(dh_key).decode(),
+                public_rsa_key=self.export_rsa_key(),
+                signature=base64.b64encode(signature).decode(),
             )
             self.sv_socket.sendall(pack)
-            session.create_shared_secret()
         except Exception as e:
             if self.on_message:
                 self.on_message(f"[error al realizar el handshake]: {e}")
+
+    def export_rsa_key(self):
+        if self._RSA_private_key is None:
+            return None
+        public_key = self._RSA_private_key.public_key()
+        serialized_key = public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        return base64.b64encode(serialized_key).decode()

@@ -2,7 +2,7 @@ import os
 
 from client_core import ChatClientCore
 
-motor = ChatClientCore("anna", print, "127.0.0.1", "5050")
+motor = ChatClientCore("anna", print, "127.0.0.1", 5050)
 motor.connect()
 
 while True:
@@ -12,7 +12,7 @@ while True:
         os.system("clear")
 
         print(f"=== Sala con {target} ===")
-        print(motor.get_messages(target))
+        print(motor._get_message())
 
         nuevo_msg = input("Mensaje: ")
-        motor.send_message(target, nuevo_msg)
+        motor._send_message(target, nuevo_msg)
