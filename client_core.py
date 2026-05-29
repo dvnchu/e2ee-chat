@@ -1,6 +1,11 @@
 import base64
 import socket
 import threading
+import os
+import json
+import platform
+
+from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
@@ -22,22 +27,66 @@ class ChatClientCore:
         self.sv_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
         self.lock = threading.Lock()
         self._RSA_private_key = None
-
+        self.app_dir = self.get_app_dir()
+        self.app_dir.mkdir(Parents=True, exist_ok=True)
+        self.key_path = self.app_dir / "private_key.pem "
+        self.known_keys_path = self.app_dir / "known_keys.json"
+        self.known_keys = self._load_known_keys()
+    
+      
     @property
     def private_key(self):
-        if self._private_key is None:
-            self.on_message("[SYSTEM]: Generating cryptographic keys. Please wait")
-            self._private_key = rsa.generate_private_key(
-                public_exponent=65537, key_size=2048
-            )
-            self.on_message("[SYSTEM]: Successful key generation")
-        return self._private_key
+        if self._RSA_private_key is None:
+            if not self.key_path.exists():
+                self.on_message("[SYSTEM]: Generating cryptographic keys. Please wait")
+                self._RSA_private_key = rsa.generate_private_key(
+                    public_exponent=65537, key_size=2048
+                )
+                pem_data = self.export_rsa_key()
+                self.on_message("[SYSTEM]: Successful key generation")   
+            with open("path/to/key.pem", "rb") as key_file:
+                self._RSA_private_key = serialization.load_pem_private_key(
+                key_file.read(),
+                password=None,
+                ) 
+            
+            
+        return self._RSA_private_key
 
+    def get_app_dir(app_name="e2eechat"):
+        system = platform.system()
+    
+        if system == "Windows":
+            return Path.home() / "AppData" / "Local" / app_name
+        
+        elif system == "Darwin": 
+            return Path.home() / "Library" / "Application Support" / app_name
+        
+        else: 
+            return Path.home() / ".local" / "share" / app_name    
+
+    def _load_known_keys(self):
+        if self.known_keys_path.exists():
+            try:
+                with open(self.known_keys_path, "r") as  f:
+                    return json.load(f) 
+            except Exception as e:
+                        self.on_message(f"[ERROR]: Contact files couldnt be read: {e}")
+                        return {}
+            return {}
+    def _save_known_keys(self):
+        try:
+            with open(self.known_keys_path, "w") as f:
+                json.dump(self.known_keys, f, indent=4)
+        except Exception as e:
+            self.on_message(f"[ERROR]: Contact couldnt be saved: {e}")
+           
+   
     def connect(self):
         self.sv_socket.connect((self.sv_ip, self.sv_port))
         sync = create_pack("login", self.username)
         self.sv_socket.sendall(sync)
-        raw_ack = self.sv_socket.recv(1024)
+        raw_ack = self.sv_socket.recv(4096)
         ack = parse_json(raw_ack)
         if ack and ack.get("type") == "login_success":
             self.on_message(ack.get("content"))
@@ -49,17 +98,17 @@ class ChatClientCore:
     def _get_message(self):
         try:
             while True:
-                data = self.sv_socket.recv(1024)
+                data = self.sv_socket.recv(4096)
                 if not data:
                     break
                 pack = parse_json(data)
                 if pack is None:
                     break
                 type = pack.get("type")
-                if type != "login" & type != "login_success":
+                if type not in  ("login", "login_success"):
                     self._route_msg(pack)
         except Exception as e:
-            self.on_message(f"[error de red]: {e}")
+            self.on_message(f"[Network error]: {e}")
         finally:
             self.sv_socket.close()
 
@@ -82,10 +131,9 @@ class ChatClientCore:
         try:
             sender = pack.get("sender")
             type = pack.get("type")
-
+            text = pack.get("content")
             if type == "error":
                 failed_target = pack.get("target")
-                text = pack.get("content")
                 with self.lock:
                     if failed_target in self.chats:
                         del self.chats[failed_target]
@@ -121,7 +169,9 @@ class ChatClientCore:
                         chat = ChatSession(sender)
                         self.chats[sender] = chat
                         self._init_handshake(chat)               
-                    
+                    else:
+                        chat = self.chats.get(sender)
+                        
                 dh_key = X25519PublicKey.from_public_bytes(dh_key_bytes)
                 chat.create_shared_secret(dh_key)
                 return
@@ -163,9 +213,7 @@ class ChatClientCore:
                 self.on_message(f"[error al realizar el handshake]: {e}")
 
     def export_rsa_key(self):
-        if self._RSA_private_key is None:
-            return None
-        public_key = self._RSA_private_key.public_key()
+        public_key = self.private_key.public_key()
         serialized_key = public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,

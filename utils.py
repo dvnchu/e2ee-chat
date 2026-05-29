@@ -25,13 +25,13 @@ def create_pack(msg_type, sender, **kwargs):
         case "login":
             pack["content"] = "sync_request"
         case "login_success":
-            pack["content"] = kwargs.get("message")
+            pack["content"] = kwargs.get("content")
         case "chat_msg":
             pack.update(
                 {"target": kwargs.get("target"), "content": kwargs.get("content")}
             )
         case "error":
-            pack["content"] = kwargs.get("error_msg")
+            pack["content"] = kwargs.get("content")
         case "handshake":
             pack.update(
                 {

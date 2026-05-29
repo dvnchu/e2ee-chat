@@ -13,11 +13,11 @@ users_lock = threading.Lock()
 def handler(clientSck):
     user = None
     try:
-        user_sync = clientSck.recv(1024)
+        user_sync = clientSck.recv(4096)
         pack_sync = parse_json(user_sync)
 
         if not pack_sync:
-            print("Conexion rechazada: Paquete invalido o vacio")
+            print("Connection rejected: Invalid package")
             clientSck.close()
             return
 
@@ -25,7 +25,7 @@ def handler(clientSck):
 
         with users_lock:
             if pack_sync["sender"] in users:
-                print(f"Rechazando conexion: {user} ya esta conectado")
+                print(f"Rejecting connection: {user} is already connected")
                 error_pack = create_pack(
                     "error", "SERVER", message="User already connected"
                 )
@@ -34,16 +34,16 @@ def handler(clientSck):
                 return
 
             users[user] = clientSck
-            print(f"Usuario {user} conectado.")
+            print(f"User {user} connected.")
 
             ok_pack = create_pack(
-                "login_success", "server", message="Welcome to the chat"
+                "login_success", "server", content="Welcome to the chat"
             )
             clientSck.sendall(ok_pack)
         while True:
-            raw_data = clientSck.recv(1024)
+            raw_data = clientSck.recv(4096)
             if not raw_data:
-                print("El usuario envio un paquete vacio")
+                print("User sent an empty package")
                 clientSck.close()
                 return
             route_msg(raw_data, user)
@@ -54,29 +54,36 @@ def handler(clientSck):
             if user:
                 with users_lock:
                     users.pop(user, None)
-                    print(f"Usuario {user} desconectado, y limpieza realizada")
+                    print(f"User {user} disconnected")
         clientSck.close()
 
 
-def route_msg(message, sender):
-    message_pack = parse_json(message)
-
-    if not message_pack:
+def route_msg(pack, sender):
+    parsed_pack = parse_json(pack)
+    if not parsed_pack:
         print("Ignorando paquete malformado.")
         return
 
-    target = message_pack["target"]
-    content = message_pack["content"]
+    target = parsed_pack.get("target")
+    msg_type = parsed_pack.get("msg_type")
+
 
     with users_lock:
-        target_sck = users.get(target, None)
+        target_sck = users.get(target)
 
-    if target_sck:
-        pack = create_pack("chat_msg", sender, target=target, content=content)
-        target_sck.sendall(pack)
-
+    if not target_sck:
+        with users_lock:
+            sender_sck = users.get(sender)
+            error_pack = create_pack("error", "server", content="User not found")
+            sender_sck.sendall(error_pack)
+        return 
+    
+    print(parsed_pack.get("content"))
+    target_sck.sendall(pack)
+   
 
 with socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM) as listeningSck:
+    listeningSck.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listeningSck.bind((HOST, PORT))
     listeningSck.listen()
     while True:
