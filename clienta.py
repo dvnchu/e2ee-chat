@@ -1,4 +1,3 @@
-# client_a.py
 from client_core import ChatClientCore
 
 def on_msg(msg):
@@ -7,4 +6,4 @@ def on_msg(msg):
 client = ChatClientCore("alice", on_msg, "localhost", 50007)
 client.connect()
 client._send_message("bob", "hola bob")
-input()  # mantener vivo
+input()

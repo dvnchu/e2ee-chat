@@ -21,7 +21,7 @@ class ChatSession:
 
     def add_message(self, sender, text):
         timestamp = datetime.now().strftime("%H:%M")
-        formatted_msg = f"[{timestamp}] {sender}: {text}]"
+        formatted_msg = f"[{timestamp}] {sender}: {text}"
         self.history.append(formatted_msg)
 
     def get_history(self):

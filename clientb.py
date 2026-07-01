@@ -1,4 +1,3 @@
-# client_b.py
 from client_core import ChatClientCore
 
 def on_msg(msg):

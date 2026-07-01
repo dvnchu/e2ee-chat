@@ -4,7 +4,7 @@ import threading
 from utils import create_pack, parse_json
 
 HOST = ""
-PORT = 50007
+PORT = 5050
 
 users = {}
 users_lock = threading.Lock()
@@ -12,8 +12,14 @@ users_lock = threading.Lock()
 
 def handler(clientSck):
     user = None
+    socket_file = None
     try:
-        user_sync = clientSck.recv(4096)
+        socket_file = clientSck.makefile('rb')
+        user_sync = socket_file.readline()
+        if not user_sync:
+            clientSck.close()
+            return
+            
         pack_sync = parse_json(user_sync)
 
         if not pack_sync:
@@ -27,7 +33,7 @@ def handler(clientSck):
             if pack_sync["sender"] in users:
                 print(f"Rejecting connection: {user} is already connected")
                 error_pack = create_pack(
-                    "error", "SERVER", message="User already connected"
+                    "error", "SERVER", content="User already connected"
                 )
                 clientSck.sendall(error_pack)
                 clientSck.close()
@@ -40,32 +46,39 @@ def handler(clientSck):
                 "login_success", "server", content="Welcome to the chat"
             )
             clientSck.sendall(ok_pack)
-        while True:
-            raw_data = clientSck.recv(4096)
-            if not raw_data:
-                print("User sent an empty package")
-                clientSck.close()
-                return
-            route_msg(raw_data, user)
+            
+        for line in socket_file:
+            if not line:
+                break
+            route_msg(line, user)
     except Exception as e:
-        print(f"Error en el handler: {e}")
+        print(f"[ERROR]: Handler exception: {e}")
     finally:
+        if socket_file:
+            socket_file.close()
         with users_lock:
             if user:
-                with users_lock:
-                    users.pop(user, None)
-                    print(f"User {user} disconnected")
+                users.pop(user, None)
+                print(f"User {user} disconnected")
         clientSck.close()
 
 
 def route_msg(pack, sender):
     parsed_pack = parse_json(pack)
     if not parsed_pack:
-        print("Ignorando paquete malformado.")
+        print("[WARNING]: Ignoring malformed package.")
         return
 
     target = parsed_pack.get("target")
     msg_type = parsed_pack.get("msg_type")
+
+    if target == sender:
+        with users_lock:
+            sender_sck = users.get(sender)
+        if sender_sck:
+            error_pack = create_pack("error", "server", content="You cannot message yourself")
+            sender_sck.sendall(error_pack)
+        return
 
 
     with users_lock:
